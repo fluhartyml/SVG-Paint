@@ -18,6 +18,11 @@ class SVGConverter {
         return svgContent
     }
     
+    // Public method for live preview
+    func quantizeColorsPublic(image: UIImage, numberOfColors: Int, tolerance: Double) async -> UIImage {
+        return await quantizeColors(image: image, numberOfColors: numberOfColors, tolerance: tolerance)
+    }
+    
     nonisolated private func quantizeColors(image: UIImage, numberOfColors: Int, tolerance: Double) async -> UIImage {
         return await Task.detached {
             guard let cgImage = image.cgImage else { return image }
@@ -175,19 +180,19 @@ class SVGConverter {
         let height = Int(image.size.height)
         
         let svgString = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 \(width) \(height)\" width=\"\(width)\" height=\"\(height)\"><image width=\"\(width)\" height=\"\(height)\" xlink:href=\"data:image/png;base64,\(base64)\"/></svg>"
-                
-                return svgString
-            }
-        }
+        
+        return svgString
+    }
+}
 
-        extension UIColor {
-            func toHex() -> String {
-                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-                getRed(&r, green: &g, blue: &b, alpha: &a)
-                
-                return String(format: "#%02X%02X%02X",
-                             Int(r * 255),
-                             Int(g * 255),
-                             Int(b * 255))
-            }
-        }
+extension UIColor {
+    func toHex() -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        
+        return String(format: "#%02X%02X%02X",
+                     Int(r * 255),
+                     Int(g * 255),
+                     Int(b * 255))
+    }
+}
