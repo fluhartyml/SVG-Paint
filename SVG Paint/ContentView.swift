@@ -2,6 +2,14 @@
 //  ContentView.swift
 //  SVG Paint
 //
+//  Created by Michael Fluharty on 10/29/25.
+//
+
+
+//
+//  ContentView.swift
+//  SVG Paint
+//
 //  Main UI for image import and SVG conversion
 //  Created: 2025-10-29 09:28 CDT
 //

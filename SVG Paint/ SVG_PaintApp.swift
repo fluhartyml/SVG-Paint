@@ -1,12 +1,4 @@
 //
-//  SVG.swift
-//  SVG Paint
-//
-//  Created by Michael Fluharty on 10/29/25.
-//
-
-
-//
 //  SVG_PaintApp.swift
 //  SVG Paint
 //
