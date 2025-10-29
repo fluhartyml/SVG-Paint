@@ -2,49 +2,52 @@
 //  DeveloperNotes.swift
 //  SVG Paint
 //
-//  Project memory and decision log
-//  Created: 2025-10-29 09:28 CDT
+//  Human‑readable developer notes for SVG Paint project.
+//  Keep this file in source control.
+//  When you (or Claude) say: "add to developer notes", append the note under the
+//  "Developer Notes Log" section below.
+//
+//  This file is intentionally mostly comments so it does not affect the build.
 //
 
 /*
 
-# SVG Paint — Developer Notes
+SVG Paint — Developer Notes
 
 Purpose
-- Image to SVG converter with gradient flattening
-- Secondary: Paint tool for pixel art creation (future)
-- Universal posterizer: works on icons, logos, photos
 
-Project Details
-- Bundle ID: com.mlf.SVGPaint
-- Platform: iOS/iPadOS (Designed for iPad, runs on Mac)
-- Storage: None - simple import/convert/export workflow
-- Created: 2025-10-29 09:28 CDT
+- Single place to capture decisions, TODOs, and workflow policies.
+- Append new entries in the "Developer Notes Log" section with timestamp.
+- Serves as PERSISTENT MEMORY across Claude chat sessions.
 
-Key Design Decisions
+How to use this file
 
-[2025 OCT 29 0928] (MLF) Primary purpose is converting "bitchin icon images" to SVG
-[2025 OCT 29 0928] (MLF) Gradient flattening: average gradient colors into single solid color
-[2025 OCT 29 0928] (MLF) Universal posterizer: works on ANY image (icon, logo, photo, human, dog)
-[2025 OCT 29 0928] (MLF) Output: simplified SVG illustration with flat color regions
-[2025 OCT 29 0928] (MLF) Processing: color quantization → gradient averaging → vectorization
-[2025 OCT 29 0928] (Claude) No storage/database - simple file-based workflow
-[2025 OCT 29 0928] (Claude) User controls: number of colors (3-12), color tolerance (10-50)
+- When you want to record a decision, add entry under "Developer Notes Log":
+  [YYYY MMM DD HHMM] (author) Short description of the decision, idea, or TODO.
+- Keep entries concise. Use sub‑bullets if longer.
+- Example: "[2025 OCT 29 1400] (MLF) Added zoom controls to preview image with magnifying glass icons."
 
-Technical Approach
+Rules & Guidance for Claude (Persistent Memory)
 
-[2025 OCT 29 0928] (Claude) K-means clustering for color quantization
-[2025 OCT 29 0928] (Claude) Gradient flattening via color averaging within tolerance
-[2025 OCT 29 0928] (Claude) Region extraction via flood fill (to be implemented)
-[2025 OCT 29 0928] (Claude) SVG path generation from color regions
+- When user says "check the developer notes" or "add to developer notes", they mean THIS file.
+- Use the `view` tool to read this file from /mnt/project/ when instructed.
+- Do NOT write logs to any runtime-accessible file. Only append comments inside this file.
+- Do NOT wire this file into the app at runtime (do not import/read/parse it from app code).
+- Append new entries under "Developer Notes Log" using format:
+  [YYYY MMM DD HHMM] (AUTHOR) Message.
+  Assistant uses (MLF) when writing on behalf of user; user may sign as (MLF).
+  Use (Claude) for Claude entries.
+- Newest entries go at TOP of Developer Notes Log for quick scanning.
+- For multi-line notes, use simple "-" bullets. Avoid images and tables.
+- If a note implies code changes, treat that as separate, explicit task; do not change code unless requested.
 
-Current Status
+CRITICAL CLAUDE iPAD WORKFLOW RULES:
 
-[2025 OCT 29 0928] (Claude) Xcode project created with GitHub remote
-[2025 OCT 29 0928] (Claude) Core files generated: ContentView, SVGConverter, DeveloperNotes
-[2025 OCT 29 0928] (Claude) Color quantization algorithm complete
-[2025 OCT 29 0928] (Claude) TODO: Implement region extraction (flood fill)
-[2025 OCT 29 0928] (Claude) TODO: Implement SVG path tracing from regions
-[2025 OCT 29 0928] (Claude) TODO: Add paint tool (future v2)
+NEW CHAT THREAD AUTO-START BEHAVIOR:
+When user starts a new chat thread (usually because previous thread hit length limit):
 
-*/
+1. IMMEDIATELY use user_time_v0 tool to get current date and time
+2. Use recent_chats to load the most recent chat thread (the one that just maxed out)
+3. Use recent_chats with date filters to load ALL chats from today's date
+4. Review context from those threads before responding to user
+5. Acknowledge you've reviewed the context: "I've reviewed today's cha

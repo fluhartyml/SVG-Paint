@@ -2,197 +2,183 @@
 //  SVGConverter.swift
 //  SVG Paint
 //
-//  Core image to SVG conversion with gradient flattening
-//  Created: 2025-10-29 09:28 CDT
+//  Handles image to SVG conversion and posterization
 //
 
 import UIKit
-import CoreImage
 
-@MainActor
 class SVGConverter {
     
-    func convert(image: UIImage, numberOfColors: Int, colorTolerance: Double) async -> String {
-        let quantizedImage = await quantizeColors(image: image, numberOfColors: numberOfColors, tolerance: colorTolerance)
-        let svgContent = await generateSimpleSVG(from: quantizedImage)
-        return svgContent
-    }
+    // MARK: - Public Methods
     
-    // Public method for live preview
-    func quantizeColorsPublic(image: UIImage, numberOfColors: Int, tolerance: Double) async -> UIImage {
-        return await quantizeColors(image: image, numberOfColors: numberOfColors, tolerance: tolerance)
-    }
-    
-    nonisolated private func quantizeColors(image: UIImage, numberOfColors: Int, tolerance: Double) async -> UIImage {
-        return await Task.detached {
-            guard let cgImage = image.cgImage else { return image }
-            
-            let width = cgImage.width
-            let height = cgImage.height
-            
-            let colorSpace = CGColorSpaceCreateDeviceRGB()
-            let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-            
-            guard let context = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo.rawValue
-            ) else { return image }
-            
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            
-            guard let data = context.data else { return image }
-            let pixelBuffer = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
-            
-            var colorMap: [String: (color: UIColor, count: Int)] = [:]
-            
-            for y in 0..<height {
-                for x in 0..<width {
-                    let offset = (y * width + x) * 4
-                    let r = CGFloat(pixelBuffer[offset]) / 255.0
-                    let g = CGFloat(pixelBuffer[offset + 1]) / 255.0
-                    let b = CGFloat(pixelBuffer[offset + 2]) / 255.0
-                    let a = CGFloat(pixelBuffer[offset + 3]) / 255.0
-                    
-                    let color = UIColor(red: r, green: g, blue: b, alpha: a)
-                    let key = SVGConverter.toHexStatic(color)
-                    
-                    if let existing = colorMap[key] {
-                        colorMap[key] = (color: existing.color, count: existing.count + 1)
-                    } else {
-                        colorMap[key] = (color: color, count: 1)
-                    }
-                }
-            }
-            
-            let allColors = colorMap.values.map { $0.color }
-            let palette = SVGConverter.createPaletteStatic(from: allColors, count: numberOfColors)
-            
-            for y in 0..<height {
-                for x in 0..<width {
-                    let offset = (y * width + x) * 4
-                    let r = CGFloat(pixelBuffer[offset]) / 255.0
-                    let g = CGFloat(pixelBuffer[offset + 1]) / 255.0
-                    let b = CGFloat(pixelBuffer[offset + 2]) / 255.0
-                    let a = CGFloat(pixelBuffer[offset + 3]) / 255.0
-                    
-                    let originalColor = UIColor(red: r, green: g, blue: b, alpha: a)
-                    let nearestColor = SVGConverter.findNearestColorStatic(originalColor, in: palette)
-                    
-                    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
-                    nearestColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-                    
-                    pixelBuffer[offset] = UInt8(red * 255)
-                    pixelBuffer[offset + 1] = UInt8(green * 255)
-                    pixelBuffer[offset + 2] = UInt8(blue * 255)
-                    pixelBuffer[offset + 3] = UInt8(alpha * 255)
-                }
-            }
-            
-            guard let newCGImage = context.makeImage() else { return image }
-            return UIImage(cgImage: newCGImage)
-        }.value
-    }
-    
-    nonisolated private static func createPaletteStatic(from colors: [UIColor], count: Int) -> [UIColor] {
-        guard colors.count > count else { return colors }
+    /// Posterize an image by reducing it to a specific number of colors
+    public func posterizeImage(_ image: UIImage, numberOfColors: Int, colorTolerance: Double) -> UIImage? {
+        guard let cgImage = image.cgImage else { return nil }
         
-        var centroids = stride(from: 0, to: colors.count, by: max(1, colors.count / count))
-            .prefix(count)
-            .map { colors[$0] }
+        let width = cgImage.width
+        let height = cgImage.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitsPerComponent = 8
         
-        for _ in 0..<10 {
-            var clusters: [[UIColor]] = Array(repeating: [], count: count)
-            
-            for color in colors {
-                if let nearestIndex = centroids.enumerated().min(by: { a, b in
-                    colorDistanceStatic(color, a.element) < colorDistanceStatic(color, b.element)
-                })?.offset {
-                    clusters[nearestIndex].append(color)
-                }
-            }
-            
-            centroids = clusters.enumerated().map { index, cluster in
-                guard !cluster.isEmpty else { return centroids[index] }
-                return averageColorStatic(of: cluster)
+        var pixelData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+        
+        guard let context = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        // Extract unique colors
+        var colorCounts: [UIColor: Int] = [:]
+        
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * bytesPerPixel
+                let r = CGFloat(pixelData[offset]) / 255.0
+                let g = CGFloat(pixelData[offset + 1]) / 255.0
+                let b = CGFloat(pixelData[offset + 2]) / 255.0
+                let a = CGFloat(pixelData[offset + 3]) / 255.0
+                
+                let color = UIColor(red: r, green: g, blue: b, alpha: a)
+                colorCounts[color, default: 0] += 1
             }
         }
         
-        return centroids
-    }
-    
-    nonisolated private static func averageColorStatic(of colors: [UIColor]) -> UIColor {
-        var totalR: CGFloat = 0, totalG: CGFloat = 0, totalB: CGFloat = 0, totalA: CGFloat = 0
+        // Get the most common colors
+        let sortedColors = colorCounts.sorted { $0.value > $1.value }
+        let paletteColors = Array(sortedColors.prefix(numberOfColors).map { $0.key })
         
-        for color in colors {
-            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            color.getRed(&r, green: &g, blue: &b, alpha: &a)
-            totalR += r
-            totalG += g
-            totalB += b
-            totalA += a
+        // Map each pixel to nearest palette color
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * bytesPerPixel
+                let r = CGFloat(pixelData[offset]) / 255.0
+                let g = CGFloat(pixelData[offset + 1]) / 255.0
+                let b = CGFloat(pixelData[offset + 2]) / 255.0
+                let a = CGFloat(pixelData[offset + 3]) / 255.0
+                
+                let originalColor = UIColor(red: r, green: g, blue: b, alpha: a)
+                let nearestColor = findNearestColor(originalColor, in: paletteColors)
+                
+                var newR: CGFloat = 0, newG: CGFloat = 0, newB: CGFloat = 0, newA: CGFloat = 0
+                nearestColor.getRed(&newR, green: &newG, blue: &newB, alpha: &newA)
+                
+                pixelData[offset] = UInt8(newR * 255)
+                pixelData[offset + 1] = UInt8(newG * 255)
+                pixelData[offset + 2] = UInt8(newB * 255)
+                pixelData[offset + 3] = UInt8(newA * 255)
+            }
         }
         
-        let count = CGFloat(colors.count)
-        return UIColor(
-            red: totalR / count,
-            green: totalG / count,
-            blue: totalB / count,
-            alpha: totalA / count
-        )
-    }
-    
-    nonisolated private static func colorDistanceStatic(_ c1: UIColor, _ c2: UIColor) -> CGFloat {
-        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
-        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        // Create new image from modified pixel data
+        guard let newContext = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ), let newCGImage = newContext.makeImage() else { return nil }
         
-        c1.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-        c2.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-        
-        return sqrt(pow(r1 - r2, 2) + pow(g1 - g2, 2) + pow(b1 - b2, 2))
+        return UIImage(cgImage: newCGImage)
     }
     
-    nonisolated private static func findNearestColorStatic(_ color: UIColor, in palette: [UIColor]) -> UIColor {
-        palette.min(by: { colorDistanceStatic(color, $0) < colorDistanceStatic(color, $1) }) ?? color
-    }
-    
-    nonisolated private static func toHexStatic(_ color: UIColor) -> String {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        color.getRed(&r, green: &g, blue: &b, alpha: &a)
-        
-        return String(format: "#%02X%02X%02X",
-                     Int(r * 255),
-                     Int(g * 255),
-                     Int(b * 255))
-    }
-    
-    nonisolated private func generateSimpleSVG(from image: UIImage) async -> String {
-        guard let pngData = image.pngData() else {
+    /// Convert an image to SVG format
+    public func convertToSVG(image: UIImage, numberOfColors: Int, colorTolerance: Double) -> String {
+        guard let posterized = posterizeImage(image, numberOfColors: numberOfColors, colorTolerance: colorTolerance),
+              let cgImage = posterized.cgImage else {
             return "<svg></svg>"
         }
         
-        let base64 = pngData.base64EncodedString()
-        let width = Int(image.size.width)
-        let height = Int(image.size.height)
+        let width = cgImage.width
+        let height = cgImage.height
         
-        let svgString = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 \(width) \(height)\" width=\"\(width)\" height=\"\(height)\"><image width=\"\(width)\" height=\"\(height)\" xlink:href=\"data:image/png;base64,\(base64)\"/></svg>"
+        var svg = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <svg width="\(width)" height="\(height)" xmlns="http://www.w3.org/2000/svg">
         
-        return svgString
+        """
+        
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitsPerComponent = 8
+        
+        var pixelData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+        
+        guard let context = CGContext(
+            data: &pixelData,
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return "<svg></svg>" }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        // Group pixels by color and create rectangles
+        var colorGroups: [String: [(x: Int, y: Int)]] = [:]
+        
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * bytesPerPixel
+                let r = pixelData[offset]
+                let g = pixelData[offset + 1]
+                let b = pixelData[offset + 2]
+                
+                let colorKey = String(format: "#%02X%02X%02X", r, g, b)
+                colorGroups[colorKey, default: []].append((x, y))
+            }
+        }
+        
+        // Create rectangles for each color group
+        for (color, pixels) in colorGroups {
+            for pixel in pixels {
+                svg += "  <rect x=\"\(pixel.x)\" y=\"\(pixel.y)\" width=\"1\" height=\"1\" fill=\"\(color)\"/>\n"
+            }
+        }
+        
+        svg += "</svg>"
+        
+        return svg
     }
-}
-
-extension UIColor {
-    func toHex() -> String {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
+    
+    // MARK: - Private Helper Methods
+    
+    private func findNearestColor(_ color: UIColor, in palette: [UIColor]) -> UIColor {
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        color.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
         
-        return String(format: "#%02X%02X%02X",
-                     Int(r * 255),
-                     Int(g * 255),
-                     Int(b * 255))
+        var nearestColor = palette[0]
+        var minDistance = CGFloat.greatestFiniteMagnitude
+        
+        for paletteColor in palette {
+            var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+            paletteColor.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+            
+            let distance = sqrt(
+                pow(r1 - r2, 2) +
+                pow(g1 - g2, 2) +
+                pow(b1 - b2, 2)
+            )
+            
+            if distance < minDistance {
+                minDistance = distance
+                nearestColor = paletteColor
+            }
+        }
+        
+        return nearestColor
     }
 }

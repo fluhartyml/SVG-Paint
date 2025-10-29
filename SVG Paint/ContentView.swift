@@ -2,8 +2,7 @@
 //  ContentView.swift
 //  SVG Paint
 //
-//  Main UI for image import and SVG conversion
-//  Created: 2025-10-29 09:28 CDT
+//  Main view with image selection, conversion, and zoomable preview
 //
 
 import SwiftUI
@@ -11,237 +10,240 @@ import PhotosUI
 
 struct ContentView: View {
     @State private var selectedImage: UIImage?
-    @State private var previewImage: UIImage?
-    @State private var convertedSVG: String?
-    @State private var isConverting = false
+    @State private var posterizedImage: UIImage?
     @State private var showingImagePicker = false
-    @State private var showingShareSheet = false
+    @State private var numberOfColors: Double = 6
+    @State private var colorTolerance: Double = 30
+    @State private var svgSize: CGFloat = 0
+    @State private var previewScale: CGFloat = 1.0
     
-    // Color quantization settings
-    @State private var numberOfColors: Int = 6
-    @State private var colorTolerance: Double = 30.0
+    let converter = SVGConverter()
     
     var body: some View {
-        NavigationStack {
+        NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Original image preview
+                    // Original Image
                     if let image = selectedImage {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Original Image")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(.headline)
                             
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(maxHeight: 250)
-                                .border(Color.gray, width: 1)
+                                .frame(maxHeight: 300)
+                                .cornerRadius(8)
                         }
-                    } else {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(height: 300)
-                            .overlay(
-                                Text("No image selected")
-                                    .foregroundColor(.gray)
-                            )
+                        .padding()
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
                     }
                     
-                    // Controls
-                    VStack(spacing: 15) {
-                        // Color count slider
-                        VStack(alignment: .leading) {
-                            Text("Number of Colors: \(numberOfColors)")
-                                .font(.caption)
-                            Slider(value: Binding(
-                                get: { Double(numberOfColors) },
-                                set: {
-                                    numberOfColors = Int($0)
-                                    updatePreview()
+                    // Posterized Preview with Zoom Controls
+                    if let posterized = posterizedImage {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Posterized Preview (\(Int(numberOfColors)) colors)")
+                                    .font(.headline)
+                                
+                                Spacer()
+                                
+                                // Zoom Controls
+                                HStack(spacing: 16) {
+                                    Button(action: {
+                                        withAnimation {
+                                            previewScale = max(0.5, previewScale - 0.25)
+                                        }
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "magnifyingglass")
+                                            Image(systemName: "minus")
+                                        }
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.blue)
+                                    }
+                                    
+                                    Text("\(Int(previewScale * 100))%")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Button(action: {
+                                        withAnimation {
+                                            previewScale = min(3.0, previewScale + 0.25)
+                                        }
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "magnifyingglass")
+                                            Image(systemName: "plus")
+                                        }
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.blue)
+                                    }
                                 }
-                            ), in: 3...12, step: 1)
-                        }
-                        
-                        // Color tolerance slider
-                        VStack(alignment: .leading) {
-                            Text("Color Tolerance: \(Int(colorTolerance))")
-                                .font(.caption)
-                            Slider(value: $colorTolerance, in: 10...50, step: 5)
-                                .onChange(of: colorTolerance) { _, _ in
-                                    updatePreview()
-                                }
-                        }
-                        
-                        // Action buttons
-                        HStack(spacing: 15) {
-                            Button("Select Image") {
-                                showingImagePicker = true
                             }
-                            .buttonStyle(.borderedProminent)
                             
+                            ScrollView([.horizontal, .vertical]) {
+                                Image(uiImage: posterized)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxHeight: 300 * previewScale)
+                                    .cornerRadius(8)
+                            }
+                            .frame(maxHeight: 350)
+                            .border(Color.green, width: 2)
+                        }
+                        .padding()
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                    
+                    // Number of Colors Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Number of Colors: \(Int(numberOfColors))")
+                            .font(.subheadline)
+                        
+                        Slider(value: $numberOfColors, in: 2...16, step: 1)
+                            .onChange(of: numberOfColors) { _, _ in
+                                updatePosterization()
+                            }
+                    }
+                    .padding()
+                    
+                    // Color Tolerance Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Color Tolerance: \(Int(colorTolerance))")
+                            .font(.subheadline)
+                        
+                        Slider(value: $colorTolerance, in: 10...100, step: 5)
+                            .onChange(of: colorTolerance) { _, _ in
+                                updatePosterization()
+                            }
+                    }
+                    .padding()
+                    
+                    // Action Buttons
+                    HStack(spacing: 16) {
+                        Button("Select Image") {
+                            showingImagePicker = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        
+                        if selectedImage != nil {
                             Button("Convert to SVG") {
-                                convertImage()
+                                convertToSVG()
                             }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(selectedImage == nil || isConverting)
+                            .buttonStyle(.bordered)
                             
-                            if convertedSVG != nil {
-                                Button("Export SVG") {
-                                    showingShareSheet = true
-                                }
-                                .buttonStyle(.bordered)
+                            Button("Export SVG") {
+                                exportSVG()
                             }
+                            .buttonStyle(.bordered)
+                            .disabled(svgSize == 0)
                         }
                     }
                     .padding()
                     
-                    // Status
-                    if isConverting {
-                        ProgressView("Converting...")
-                    }
-                    
-                    if let svg = convertedSVG {
-                        Text("SVG Ready (\(svg.count) bytes)")
+                    // SVG Size Display
+                    if svgSize > 0 {
+                        Text("SVG Ready! (\(String(format: "%.2f", svgSize)) bytes)")
                             .font(.caption)
                             .foregroundColor(.green)
                     }
-                    
-                    // Preview of posterized image
-                    if let preview = previewImage {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Posterized Preview")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            
-                            Image(uiImage: preview)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxHeight: 250)
-                                .border(Color.blue, width: 2)
-                        }
-                    }
-                    
-                    Spacer()
                 }
                 .padding()
             }
             .navigationTitle("SVG Paint")
             .sheet(isPresented: $showingImagePicker) {
-                ImagePicker(selectedImage: $selectedImage)
-                    .onChange(of: selectedImage) { _, _ in
-                        updatePreview()
+                ImagePicker(image: $selectedImage)
+                    .onDisappear {
+                        updatePosterization()
                     }
             }
-            .sheet(isPresented: $showingShareSheet) {
-                if let svgString = convertedSVG {
-                    ShareSheet(items: [createSVGFile(svgString)])
-                }
-            }
         }
     }
     
-    private func updatePreview() {
-        guard let image = selectedImage else {
-            previewImage = nil
-            return
-        }
-        
-        Task {
-            let converter = SVGConverter()
-            let quantized = await converter.quantizeColorsPublic(
-                image: image,
-                numberOfColors: numberOfColors,
-                tolerance: colorTolerance
-            )
-            
-            await MainActor.run {
-                previewImage = quantized
-            }
-        }
-    }
-    
-    private func convertImage() {
+    private func updatePosterization() {
         guard let image = selectedImage else { return }
-        
-        isConverting = true
-        
-        Task {
-            let converter = SVGConverter()
-            convertedSVG = await converter.convert(
-                image: image,
-                numberOfColors: numberOfColors,
-                colorTolerance: colorTolerance
-            )
-            
-            await MainActor.run {
-                isConverting = false
-            }
-        }
+        posterizedImage = converter.posterizeImage(
+            image,
+            numberOfColors: Int(numberOfColors),
+            colorTolerance: colorTolerance
+        )
+        previewScale = 1.0 // Reset zoom when updating
     }
     
-    private func createSVGFile(_ svgString: String) -> URL {
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("converted_image.svg")
+    private func convertToSVG() {
+        guard let image = selectedImage else { return }
+        let svgString = converter.convertToSVG(
+            image: image,
+            numberOfColors: Int(numberOfColors),
+            colorTolerance: colorTolerance
+        )
+        svgSize = CGFloat(svgString.count)
+    }
+    
+    private func exportSVG() {
+        guard let image = selectedImage else { return }
+        let svgString = converter.convertToSVG(
+            image: image,
+            numberOfColors: Int(numberOfColors),
+            colorTolerance: colorTolerance
+        )
         
-        do {
-            try svgString.write(to: tempURL, atomically: true, encoding: .utf8)
-        } catch {
-            print("Error creating SVG file: \(error)")
+        // Create share sheet
+        let av = UIActivityViewController(
+            activityItems: [svgString],
+            applicationActivities: nil
+        )
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first,
+           let rootVC = window.rootViewController {
+            rootVC.present(av, animated: true)
         }
-        
-        return tempURL
     }
 }
 
-// Simple image picker wrapper
 struct ImagePicker: UIViewControllerRepresentable {
-    @Binding var selectedImage: UIImage?
+    @Binding var image: UIImage?
     @Environment(\.dismiss) var dismiss
     
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.filter = .images
+        let picker = PHPickerViewController(configuration: config)
         picker.delegate = context.coordinator
-        picker.sourceType = .photoLibrary
         return picker
     }
     
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
     
-    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    class Coordinator: NSObject, PHPickerViewControllerDelegate {
         let parent: ImagePicker
         
         init(_ parent: ImagePicker) {
             self.parent = parent
         }
         
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.originalImage] as? UIImage {
-                parent.selectedImage = image
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            parent.dismiss()
+            
+            guard let provider = results.first?.itemProvider else { return }
+            
+            if provider.canLoadObject(ofClass: UIImage.self) {
+                provider.loadObject(ofClass: UIImage.self) { image, _ in
+                    DispatchQueue.main.async {
+                        self.parent.image = image as? UIImage
+                    }
+                }
             }
-            parent.dismiss()
-        }
-        
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.dismiss()
         }
     }
-}
-
-// Share sheet for iPad compatibility
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-    
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
-        return controller
-    }
-    
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview {
