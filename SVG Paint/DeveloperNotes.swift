@@ -50,4 +50,4 @@ When user starts a new chat thread (usually because previous thread hit length l
 2. Use recent_chats to load the most recent chat thread (the one that just maxed out)
 3. Use recent_chats with date filters to load ALL chats from today's date
 4. Review context from those threads before responding to user
-5. Acknowledge you've reviewed the context: "I've reviewed today's cha
+ 5. Acknowledge you've reviewed the context: "I've reviewed today's cha*/
